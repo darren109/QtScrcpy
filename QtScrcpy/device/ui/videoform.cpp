@@ -1,39 +1,43 @@
 #include <QDesktopWidget>
+#include <QFileInfo>
+#include <QLabel>
+#include <QMessageBox>
+#include <QMimeData>
 #include <QMouseEvent>
-#include <QTimer>
+#include <QPainter>
+#include <QScreen>
+#include <QShortcut>
 #include <QStyle>
 #include <QStyleOption>
-#include <QPainter>
+#include <QTimer>
+#include <QWindow>
 #include <QtWidgets/QHBoxLayout>
-#include <QMimeData>
-#include <QFileInfo>
-#include <QMessageBox>
 
-#include "videoform.h"
-#include "qyuvopenglwidget.h"
-#include "mousetap/mousetap.h"
-#include "ui_videoform.h"
-#include "iconhelper.h"
-#include "toolform.h"
-#include "controller.h"
-#include "filehandler.h"
 #include "config.h"
+#include "controller.h"
+#include "device.h"
+#include "iconhelper.h"
+#include "qyuvopenglwidget.h"
+#include "toolform.h"
+#include "ui_videoform.h"
+#include "videoform.h"
 extern "C"
 {
 #include "libavutil/frame.h"
 }
 
-VideoForm::VideoForm(bool skin, QWidget *parent)
-    : QWidget(parent)
-    , ui(new Ui::videoForm)
-    , m_skin(skin)
+VideoForm::VideoForm(bool framelessWindow, bool skin, QWidget *parent) : QWidget(parent), ui(new Ui::videoForm), m_skin(skin)
 {
     ui->setupUi(this);
     initUI();
+    installShortcut();
     updateShowSize(size());
     bool vertical = size().height() > size().width();
     if (m_skin) {
         updateStyleSheet(vertical);
+    }
+    if (framelessWindow) {
+        setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
     }
 }
 
@@ -62,21 +66,86 @@ void VideoForm::initUI()
 
     m_videoWidget = new QYUVOpenGLWidget();
     m_videoWidget->hide();
-    ui->keepRadioWidget->setWidget(m_videoWidget);
-    ui->keepRadioWidget->setWidthHeightRadio(m_widthHeightRatio);
+    ui->keepRatioWidget->setWidget(m_videoWidget);
+    ui->keepRatioWidget->setWidthHeightRatio(m_widthHeightRatio);
+
+    m_fpsLabel = new QLabel(m_videoWidget);
+    QFont ft;
+    ft.setPointSize(15);
+    ft.setWeight(QFont::Light);
+    ft.setBold(true);
+    m_fpsLabel->setFont(ft);
+    m_fpsLabel->move(5, 15);
+    m_fpsLabel->setMinimumWidth(100);
+    m_fpsLabel->setStyleSheet(R"(QLabel {color: #00FF00;})");
 
     setMouseTracking(true);
     m_videoWidget->setMouseTracking(true);
-    ui->keepRadioWidget->setMouseTracking(true);
+    ui->keepRatioWidget->setMouseTracking(true);
 }
 
-void VideoForm::onGrabCursor(bool grab)
+QRect VideoForm::getGrabCursorRect()
 {
-#if defined(Q_OS_WIN32) || defined(Q_OS_OSX)
-    MouseTap::getInstance()->enableMouseEventTap(m_videoWidget, grab);
-#else
-    Q_UNUSED(grab)
+    QRect rc;
+#if defined(Q_OS_WIN32)
+    rc = QRect(ui->keepRatioWidget->mapToGlobal(m_videoWidget->pos()), m_videoWidget->size());
+    // high dpi support
+    rc.setTopLeft(rc.topLeft() * m_videoWidget->devicePixelRatio());
+    rc.setBottomRight(rc.bottomRight() * m_videoWidget->devicePixelRatio());
+
+    rc.setX(rc.x() + 10);
+    rc.setY(rc.y() + 10);
+    rc.setWidth(rc.width() - 20);
+    rc.setHeight(rc.height() - 20);
+#elif defined(Q_OS_OSX)
+    rc = m_videoWidget->geometry();
+    rc.setTopLeft(ui->keepRatioWidget->mapToGlobal(rc.topLeft()));
+    rc.setBottomRight(ui->keepRatioWidget->mapToGlobal(rc.bottomRight()));
+
+    rc.setX(rc.x() + 10);
+    rc.setY(rc.y() + 10);
+    rc.setWidth(rc.width() - 20);
+    rc.setHeight(rc.height() - 20);
+#elif defined(Q_OS_LINUX)
+    rc = QRect(ui->keepRatioWidget->mapToGlobal(m_videoWidget->pos()), m_videoWidget->size());
+    // high dpi support -- taken from the WIN32 section and untested
+    rc.setTopLeft(rc.topLeft() * m_videoWidget->devicePixelRatio());
+    rc.setBottomRight(rc.bottomRight() * m_videoWidget->devicePixelRatio());
+
+    rc.setX(rc.x() + 10);
+    rc.setY(rc.y() + 10);
+    rc.setWidth(rc.width() - 20);
+    rc.setHeight(rc.height() - 20);
 #endif
+    return rc;
+}
+
+const QSize &VideoForm::frameSize()
+{
+    return m_frameSize;
+}
+
+void VideoForm::resizeSquare()
+{
+    QRect screenRect = getScreenRect();
+    if (screenRect.isEmpty()) {
+        qWarning() << "getScreenRect is empty";
+        return;
+    }
+    resize(screenRect.height(), screenRect.height());
+}
+
+void VideoForm::removeBlackRect()
+{
+    resize(ui->keepRatioWidget->goodSize());
+}
+
+void VideoForm::showFPS(bool show)
+{
+    if (!m_fpsLabel) {
+        return;
+    }
+    m_fpsLabel->setVisible(show);
 }
 
 void VideoForm::updateRender(const AVFrame *frame)
@@ -90,15 +159,14 @@ void VideoForm::updateRender(const AVFrame *frame)
 
     updateShowSize(QSize(frame->width, frame->height));
     m_videoWidget->setFrameSize(QSize(frame->width, frame->height));
-    m_videoWidget->updateTextures(frame->data[0], frame->data[1], frame->data[2],
-            frame->linesize[0], frame->linesize[1], frame->linesize[2]);
+    m_videoWidget->updateTextures(frame->data[0], frame->data[1], frame->data[2], frame->linesize[0], frame->linesize[1], frame->linesize[2]);
 }
 
 void VideoForm::showToolForm(bool show)
 {
     if (!m_toolForm) {
         m_toolForm = new ToolForm(this, ToolForm::AP_OUTSIDE_RIGHT);
-        connect(m_toolForm, &ToolForm::screenshot, this, &VideoForm::screenshot);
+        m_toolForm->setDevice(m_device);
     }
     m_toolForm->move(pos().x() + geometry().width(), pos().y() + 30);
     m_toolForm->setVisible(show);
@@ -106,14 +174,173 @@ void VideoForm::showToolForm(bool show)
 
 void VideoForm::moveCenter()
 {
-    QDesktopWidget* desktop = QApplication::desktop();
-    if (!desktop) {
-        qWarning() << "QApplication::desktop() is nullptr";
+    QRect screenRect = getScreenRect();
+    if (screenRect.isEmpty()) {
+        qWarning() << "getScreenRect is empty";
         return;
     }
-    QRect screenRect = desktop->availableGeometry();
     // 窗口居中
     move(screenRect.center() - QRect(0, 0, size().width(), size().height()).center());
+}
+
+void VideoForm::installShortcut()
+{
+    QShortcut *shortcut = nullptr;
+
+    // switchFullScreen
+    shortcut = new QShortcut(QKeySequence("Ctrl+f"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->switchFullScreen();
+    });
+
+    // resizeSquare
+    shortcut = new QShortcut(QKeySequence("Ctrl+g"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() { resizeSquare(); });
+
+    // removeBlackRect
+    shortcut = new QShortcut(QKeySequence("Ctrl+x"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() { removeBlackRect(); });
+
+    // postGoHome
+    shortcut = new QShortcut(QKeySequence("Ctrl+h"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->postGoHome();
+    });
+
+    // postGoBack
+    shortcut = new QShortcut(QKeySequence("Ctrl+b"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->postGoBack();
+    });
+
+    // postAppSwitch
+    shortcut = new QShortcut(QKeySequence("Ctrl+s"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->postAppSwitch();
+    });
+
+    // postGoMenu
+    shortcut = new QShortcut(QKeySequence("Ctrl+m"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->postGoMenu();
+    });
+
+    // postVolumeUp
+    shortcut = new QShortcut(QKeySequence("Ctrl+up"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->postVolumeUp();
+    });
+
+    // postVolumeDown
+    shortcut = new QShortcut(QKeySequence("Ctrl+down"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->postVolumeDown();
+    });
+
+    // postPower
+    shortcut = new QShortcut(QKeySequence("Ctrl+p"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->postPower();
+    });
+
+    // setScreenPowerMode(ControlMsg::SPM_OFF)
+    shortcut = new QShortcut(QKeySequence("Ctrl+o"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->setScreenPowerMode(ControlMsg::SPM_OFF);
+    });
+
+    // expandNotificationPanel
+    shortcut = new QShortcut(QKeySequence("Ctrl+n"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->expandNotificationPanel();
+    });
+
+    // collapseNotificationPanel
+    shortcut = new QShortcut(QKeySequence("Ctrl+Shift+n"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->collapseNotificationPanel();
+    });
+
+    // requestDeviceClipboard
+    shortcut = new QShortcut(QKeySequence("Ctrl+c"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->requestDeviceClipboard();
+    });
+
+    // clipboardPaste
+    shortcut = new QShortcut(QKeySequence("Ctrl+v"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->clipboardPaste();
+    });
+
+    // setDeviceClipboard
+    shortcut = new QShortcut(QKeySequence("Ctrl+Shift+v"), this);
+    connect(shortcut, &QShortcut::activated, this, [this]() {
+        if (!m_device) {
+            return;
+        }
+        emit m_device->setDeviceClipboard();
+    });
+}
+
+QRect VideoForm::getScreenRect()
+{
+    QRect screenRect;
+    QWidget *win = window();
+    if (!win) {
+        return screenRect;
+    }
+
+    QWindow *winHandle = win->windowHandle();
+    QScreen *screen = QGuiApplication::primaryScreen();
+    if (winHandle) {
+        screen = winHandle->screen();
+    }
+    if (!screen) {
+        return screenRect;
+    }
+
+    screenRect = screen->availableGeometry();
+    return screenRect;
 }
 
 void VideoForm::updateStyleSheet(bool vertical)
@@ -153,27 +380,31 @@ void VideoForm::updateShowSize(const QSize &newSize)
         m_frameSize = newSize;
 
         m_widthHeightRatio = 1.0f * newSize.width() / newSize.height();
-        ui->keepRadioWidget->setWidthHeightRadio(m_widthHeightRatio);
+        ui->keepRatioWidget->setWidthHeightRatio(m_widthHeightRatio);
 
         bool vertical = m_widthHeightRatio < 1.0f ? true : false;
         QSize showSize = newSize;
-        QDesktopWidget* desktop = QApplication::desktop();
-        if (!desktop) {
-            qWarning() << "QApplication::desktop() is nullptr";
+        QRect screenRect = getScreenRect();
+        if (screenRect.isEmpty()) {
+            qWarning() << "getScreenRect is empty";
             return;
         }
-        QRect screenRect = desktop->availableGeometry();
         if (vertical) {
             showSize.setHeight(qMin(newSize.height(), screenRect.height() - 200));
             showSize.setWidth(showSize.height() * m_widthHeightRatio);
         } else {
-            showSize.setWidth(qMin(newSize.width(), screenRect.width()/2));
+            showSize.setWidth(qMin(newSize.width(), screenRect.width() / 2));
             showSize.setHeight(showSize.width() / m_widthHeightRatio);
         }
 
-        if (isFullScreen()) {
-            switchFullScreen();
+        if (isFullScreen() && m_device) {
+            emit m_device->switchFullScreen();
         }
+
+        if (isMaximized()) {
+            showNormal();
+        }
+
         if (m_skin) {
             QMargins m = getMargins(vertical);
             showSize.setWidth(showSize.width() + m.left() + m.right());
@@ -190,12 +421,12 @@ void VideoForm::updateShowSize(const QSize &newSize)
     }
 }
 
-void VideoForm::switchFullScreen()
+void VideoForm::onSwitchFullScreen()
 {
     if (isFullScreen()) {
         // 横屏全屏铺满全屏，恢复时，恢复保持宽高比
         if (m_widthHeightRatio > 1.0f) {
-            ui->keepRadioWidget->setWidthHeightRadio(m_widthHeightRatio);
+            ui->keepRatioWidget->setWidthHeightRatio(m_widthHeightRatio);
         }
 
         showNormal();
@@ -216,7 +447,7 @@ void VideoForm::switchFullScreen()
     } else {
         // 横屏全屏铺满全屏，不保持宽高比
         if (m_widthHeightRatio > 1.0f) {
-            ui->keepRadioWidget->setWidthHeightRadio(-1.0f);
+            ui->keepRatioWidget->setWidthHeightRatio(-1.0f);
         }
 
         m_fullScreenBeforePos = pos();
@@ -238,6 +469,15 @@ void VideoForm::switchFullScreen()
     }
 }
 
+void VideoForm::updateFPS(quint32 fps)
+{
+    //qDebug() << "FPS:" << fps;
+    if (!m_fpsLabel) {
+        return;
+    }
+    m_fpsLabel->setText(QString("FPS:%1").arg(fps));
+}
+
 void VideoForm::staysOnTop(bool top)
 {
     bool needShow = false;
@@ -253,39 +493,33 @@ void VideoForm::staysOnTop(bool top)
     }
 }
 
-Controller *VideoForm::getController()
+void VideoForm::setDevice(Device *device)
 {
-    return m_controller;
-}
-
-void VideoForm::setFileHandler(FileHandler *fileHandler)
-{
-    m_fileHandler = fileHandler;
-}
-
-void VideoForm::setSerial(const QString &serial)
-{
-    m_serial = serial;
-}
-
-const QString &VideoForm::getSerial()
-{
-    return m_serial;
-}
-
-void VideoForm::setController(Controller *controller)
-{
-    m_controller = controller;
+    m_device = device;
 }
 
 void VideoForm::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::MiddleButton) {
+        if (m_device && !m_device->isCurrentCustomKeymap()) {
+            emit m_device->postGoHome();
+        }
+    }
+
     if (m_videoWidget->geometry().contains(event->pos())) {
-        if (!m_controller) {
+        if (!m_device) {
             return;
         }
         event->setLocalPos(m_videoWidget->mapFrom(this, event->localPos().toPoint()));
-        m_controller->mouseEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
+        emit m_device->mouseEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
+
+        // debug keymap pos
+        if (event->button() == Qt::LeftButton) {
+            qreal x = event->localPos().x() / m_videoWidget->size().width();
+            qreal y = event->localPos().y() / m_videoWidget->size().height();
+            QString posTip = QString(R"("pos": {"x": %1, "y": %2})").arg(x).arg(y);
+            qInfo() << posTip.toStdString().c_str();
+        }
     } else {
         if (event->button() == Qt::LeftButton) {
             m_dragPosition = event->globalPos() - frameGeometry().topLeft();
@@ -297,7 +531,7 @@ void VideoForm::mousePressEvent(QMouseEvent *event)
 void VideoForm::mouseReleaseEvent(QMouseEvent *event)
 {
     if (m_dragPosition.isNull()) {
-        if (!m_controller) {
+        if (!m_device) {
             return;
         }
         event->setLocalPos(m_videoWidget->mapFrom(this, event->localPos().toPoint()));
@@ -316,7 +550,7 @@ void VideoForm::mouseReleaseEvent(QMouseEvent *event)
             local.setY(m_videoWidget->height());
         }
         event->setLocalPos(local);
-        m_controller->mouseEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
+        emit m_device->mouseEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
     } else {
         m_dragPosition = QPoint(0, 0);
     }
@@ -325,12 +559,12 @@ void VideoForm::mouseReleaseEvent(QMouseEvent *event)
 void VideoForm::mouseMoveEvent(QMouseEvent *event)
 {
     if (m_videoWidget->geometry().contains(event->pos())) {
-        if (!m_controller) {
+        if (!m_device) {
             return;
         }
         event->setLocalPos(m_videoWidget->mapFrom(this, event->localPos().toPoint()));
-        m_controller->mouseEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
-    } else if (!m_dragPosition.isNull()){
+        emit m_device->mouseEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
+    } else if (!m_dragPosition.isNull()) {
         if (event->buttons() & Qt::LeftButton) {
             move(event->globalPos() - m_dragPosition);
             event->accept();
@@ -338,55 +572,58 @@ void VideoForm::mouseMoveEvent(QMouseEvent *event)
     }
 }
 
-void VideoForm::wheelEvent(QWheelEvent *event)
+void VideoForm::mouseDoubleClickEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton && !m_videoWidget->geometry().contains(event->pos())) {
+        if (!isMaximized()) {
+            removeBlackRect();
+        }
+    }
+
+    if (event->button() == Qt::RightButton && m_device && !m_device->isCurrentCustomKeymap()) {
+        emit m_device->postBackOrScreenOn();
+    }
+
     if (m_videoWidget->geometry().contains(event->pos())) {
-        if (!m_controller) {
+        if (!m_device) {
             return;
         }
-        QPointF pos = m_videoWidget->mapFrom(this, event->pos());
-        /*
-        QWheelEvent(const QPointF &pos, const QPointF& globalPos, int delta,
-                Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers,
-                Qt::Orientation orient = Qt::Vertical);
-        */
-        QWheelEvent wheelEvent(pos, event->globalPosF(), event->delta(),
-                               event->buttons(), event->modifiers(), event->orientation());
-        m_controller->wheelEvent(&wheelEvent, m_videoWidget->frameSize(), m_videoWidget->size());
+        event->setLocalPos(m_videoWidget->mapFrom(this, event->localPos().toPoint()));
+        emit m_device->mouseEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
+    }
+}
+
+void VideoForm::wheelEvent(QWheelEvent *event)
+{
+    if (m_videoWidget->geometry().contains(event->position().toPoint())) {
+        if (!m_device) {
+            return;
+        }
+        QPointF pos = m_videoWidget->mapFrom(this, event->position().toPoint());
+        QWheelEvent wheelEvent(
+            pos, event->globalPosition(), event->pixelDelta(), event->angleDelta(), event->buttons(), event->modifiers(), event->phase(), event->inverted());
+        emit m_device->wheelEvent(&wheelEvent, m_videoWidget->frameSize(), m_videoWidget->size());
     }
 }
 
 void VideoForm::keyPressEvent(QKeyEvent *event)
 {
-    if (Qt::Key_Escape == event->key()
-            && !event->isAutoRepeat()
-            && isFullScreen()) {
-        switchFullScreen();
-    }
-    if (!m_controller) {
+    if (!m_device) {
         return;
     }
-    if (event->key() == Qt::Key_C && (event->modifiers() & Qt::ControlModifier)) {
-        m_controller->requestDeviceClipboard();
-    }
-    if (event->key() == Qt::Key_V && (event->modifiers() & Qt::ControlModifier)) {
-        if (event->modifiers() & Qt::ShiftModifier) {
-            m_controller->setDeviceClipboard();
-        } else {
-            m_controller->clipboardPaste();
-        }
-        return;
+    if (Qt::Key_Escape == event->key() && !event->isAutoRepeat() && isFullScreen()) {
+        emit m_device->switchFullScreen();
     }
 
-    m_controller->keyEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
+    emit m_device->keyEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
 }
 
 void VideoForm::keyReleaseEvent(QKeyEvent *event)
 {
-    if (!m_controller) {
+    if (!m_device) {
         return;
     }
-    m_controller->keyEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
+    emit m_device->keyEvent(event, m_videoWidget->frameSize(), m_videoWidget->size());
 }
 
 void VideoForm::paintEvent(QPaintEvent *paint)
@@ -409,12 +646,12 @@ void VideoForm::showEvent(QShowEvent *event)
 void VideoForm::resizeEvent(QResizeEvent *event)
 {
     Q_UNUSED(event)
-    QSize goodSize = ui->keepRadioWidget->goodSize();
+    QSize goodSize = ui->keepRatioWidget->goodSize();
     if (goodSize.isEmpty()) {
         return;
     }
     QSize curSize = size();
-    // 限制VideoForm尺寸不能小于keepRadioWidget good size
+    // 限制VideoForm尺寸不能小于keepRatioWidget good size
     if (m_widthHeightRatio > 1.0f) {
         // hor
         if (curSize.height() <= goodSize.height()) {
@@ -430,6 +667,15 @@ void VideoForm::resizeEvent(QResizeEvent *event)
             setMinimumWidth(0);
         }
     }
+}
+
+void VideoForm::closeEvent(QCloseEvent *event)
+{
+    Q_UNUSED(event)
+    if (!m_device) {
+        return;
+    }
+    Config::getInstance().setRect(m_device->getSerial(), geometry());
 }
 
 void VideoForm::dragEnterEvent(QDragEnterEvent *event)
@@ -449,21 +695,25 @@ void VideoForm::dragLeaveEvent(QDragLeaveEvent *event)
 
 void VideoForm::dropEvent(QDropEvent *event)
 {
-    if (!m_fileHandler) {
+    if (!m_device) {
         return;
     }
-    const QMimeData* qm = event->mimeData();
-    QString file = qm->urls()[0].toLocalFile();
-    QFileInfo fileInfo(file);
+    const QMimeData *qm = event->mimeData();
+    QList<QUrl> urls = qm->urls();
 
-    if (!fileInfo.exists()) {
-        QMessageBox::warning(this, "QtScrcpy", tr("file does not exist"), QMessageBox::Ok);
-        return;
-    }
+    for (const QUrl &url : urls) {
+        QString file = url.toLocalFile();
+        QFileInfo fileInfo(file);
 
-    if (fileInfo.isFile() && fileInfo.suffix() == "apk") {
-        m_fileHandler->installApkRequest(m_serial, file);
-        return;
+        if (!fileInfo.exists()) {
+            QMessageBox::warning(this, "QtScrcpy", tr("file does not exist"), QMessageBox::Ok);
+            continue;
+        }
+
+        if (fileInfo.isFile() && fileInfo.suffix() == "apk") {
+            emit m_device->installApkRequest(file);
+            continue;
+        }
+        emit m_device->pushFileRequest(file, Config::getInstance().getPushFilePath() + fileInfo.fileName());
     }
-    m_fileHandler->pushFileRequest(m_serial, file, Config::getInstance().getPushFilePath() + fileInfo.fileName());
 }

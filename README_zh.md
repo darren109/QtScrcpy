@@ -1,8 +1,11 @@
 # QtScrcpy
 
-![build state](https://img.shields.io/badge/build-passing-brightgreen.svg)
+![Windows](https://github.com/barry-ran/QtScrcpy/workflows/Windows/badge.svg)
+![MacOS](https://github.com/barry-ran/QtScrcpy/workflows/MacOS/badge.svg)
+![Ubuntu](https://github.com/barry-ran/QtScrcpy/workflows/Ubuntu/badge.svg)
+
 ![license](https://img.shields.io/badge/license-Apache2.0-blue.svg)
-![release](https://img.shields.io/badge/release-v1.0.3-brightgreen.svg)
+![release](https://img.shields.io/github/v/release/barry-ran/QtScrcpy.svg)
 
 [English introduction](README.md)
 
@@ -30,10 +33,10 @@ QtScrcpy可以通过USB(或通过TCP/IP)连接Android设备，并进行显示和
 
 ![linux](screenshot/ubuntu.png)
 
-## 自定义按键映射（仅windows平台开启）
-可以根据需要，自己编写脚本将PC键盘按键映射为手机的触摸点击，编写规则在[这里](docs/按键映射说明.md)。
+## 自定义按键映射
+可以根据需要，自己编写脚本将PC键盘按键映射为手机的触摸点击，编写规则在[这里](docs/KeyMapDes_zh.md)。
 
-默认自带了针对和平精英手游和抖音进行键鼠映射的映射脚本，开启平精英手游后可以用键鼠像玩端游一样玩和平精英手游，开启抖音映射以后可以使用上下左右方向键模拟上下左右滑动，你也可以按照[编写规则](docs/按键映射说明.md)编写其他游戏的映射文件，默认按键映射如下：
+默认自带了针对和平精英手游和抖音进行键鼠映射的映射脚本，开启平精英手游后可以用键鼠像玩端游一样玩和平精英手游，开启抖音映射以后可以使用上下左右方向键模拟上下左右滑动，你也可以按照[编写规则](docs/KeyMapDes_zh.md)编写其他游戏的映射文件，默认按键映射如下：
 
 ![game](screenshot/game.jpg)
 
@@ -48,6 +51,11 @@ QtScrcpy可以通过USB(或通过TCP/IP)连接Android设备，并进行显示和
 - 再次按~键切换为正常控制模式
 - 要想wasd控制开车记得在载具设置中设置为单摇杆模式
 
+## 群控
+你可以同时控制所有的手机
+
+![gc](docs/image/group-control.gif)
+
 ## 感谢
 
 基于[Genymobile](https://github.com/Genymobile)的[scrcpy](https://github.com/Genymobile/scrcpy)项目进行复刻，重构，非常感谢。QtScrcpy和原版scrcpy区别如下：
@@ -60,7 +68,7 @@ QtScrcpy可以通过USB(或通过TCP/IP)连接Android设备，并进行显示和
 跨平台基础设施|自己封装|Qt提供
 编程语言|C|C++
 编程方式|同步|异步
-控制方式|单点触控|单点/多点触控
+按键映射|不支持自定义|支持自定义按键映射
 编译方式|meson+gradle|Qt Creator
 
 - 使用Qt可以非常容易的定制自己的界面
@@ -100,7 +108,7 @@ Windows平台，你可以直接使用我编译好的可执行程序:
  - [国内下载][gitee-download]
  - [国外下载][github-download]
 
-你也可以[自己编译](#如何编译)
+你也可以[自己编译](##如何编译)
 
 ### Mac OS
 
@@ -109,13 +117,13 @@ Mac OS平台，你可以直接使用我编译好的可执行程序:
 - [国内下载][gitee-download]
 - [国外下载][github-download]
 
-你也可以[自己编译](#如何编译)
+你也可以[自己编译](##如何编译)
 
 ### Linux
 
 目前只提供了windows和mac平台的可执行程序，如果需要linux平台的可执行程序，
 
-您通常需要[自己编译](#如何编译)。别担心，这并不难。
+您通常需要[自己编译](##如何编译)。别担心，这并不难。
 
 目前只在ubuntu上测试过
 
@@ -163,6 +171,7 @@ Mac OS平台，你可以直接使用我编译好的可执行程序:
 - 实时显示Android设备屏幕
 - 实时键鼠控制Android设备
 - 屏幕录制
+- 截图为png
 - 无线连接
 - 最多支持16台设备连接（PC性能允许的情况下可以增加，需要自己编译）
 - 全屏显示
@@ -176,6 +185,33 @@ Mac OS平台，你可以直接使用我编译好的可执行程序:
     - `Ctrl` + `c`将设备剪贴板复制到计算机剪贴板；
     - `Ctrl` + `Shift` + `v`将计算机剪贴板复制到设备剪贴板；
     - `Ctrl` +`v` 将计算机剪贴板作为一系列文本事件发送到设备（不支持非ASCII字符）。
+- 群控
+
+## 快捷键
+
+ | 功能                                   |   快捷键(Windows)              |   快捷键 (macOS)
+ | -------------------------------------- |:----------------------------- |:-----------------------------
+ | 切换全屏                               | `Ctrl`+`f`                     | `Cmd`+`f`
+ | 调整窗口大小为 1:1                      | `Ctrl`+`g`                    | `Cmd`+`g`
+ | 调整窗口大小去除黑边                    | `Ctrl`+`x` \| _左键双击_       | `Cmd`+`x`  \| _左键双击_
+ | 点击 `主页`                            | `Ctrl`+`h` \| _点击鼠标中键_    | `Ctrl`+`h` \| _点击鼠标中键_
+ | 点击 `BACK`                            | `Ctrl`+`b` \| _右键双击_       | `Cmd`+`b`  \| _右键双击_
+ | 点击 `APP_SWITCH`                      | `Ctrl`+`s`                    | `Cmd`+`s`
+ | 点击 `MENU`                            | `Ctrl`+`m`                    | `Ctrl`+`m`
+ | 点击 `VOLUME_UP`                       | `Ctrl`+`↑` _(上)_             | `Cmd`+`↑` _(上)_
+ | 点击 `VOLUME_DOWN`                     | `Ctrl`+`↓` _(下)_             | `Cmd`+`↓` _(下)_
+ | 点击 `POWER`                           | `Ctrl`+`p`                    | `Cmd`+`p`
+ | 打开电源                               | _右键双击_                     | _右键双击_
+ | 关闭屏幕 (保持投屏)                     | `Ctrl`+`o`                    | `Cmd`+`o`
+ | 打开下拉菜单                           | `Ctrl`+`n`                    | `Cmd`+`n`
+ | 关闭下拉菜单                           | `Ctrl`+`Shift`+`n`            | `Cmd`+`Shift`+`n`
+ | 复制设备剪切板到电脑                    | `Ctrl`+`c`                    | `Cmd`+`c`
+ | 粘贴电脑剪切板到设备                    | `Ctrl`+`v`                    | `Cmd`+`v`
+ | 复制电脑剪切板到设备                    | `Ctrl`+`Shift`+`v`            | `Cmd`+`Shift`+`v`
+
+鼠标左键双击黑色区域可以去除黑色区域
+
+如果电源关闭，鼠标右键双击打开电源；如果电源开启，鼠标右键双击相当于返回
 
 ## TODO
 [后期计划](docs/TODO.md)
@@ -185,6 +221,12 @@ Mac OS平台，你可以直接使用我编译好的可执行程序:
 
 ## 开发者
 [开发者相关](docs/DEVELOP.md)
+
+欢迎大家一起维护这个项目，贡献自己的代码，不过请遵循一下几点要求：
+1. pr请提到dev分支，不要提到master分支
+2. 提pr之前请先rebase dev
+3. pr请以少量多次的原则提交（建议一个小的功能点提一个pr）
+4. 代码风格请保持和已有风格一致
 
 ## 为什么开发QtScrcpy？
 综合起来有以下几个原因，比重从大到小排列：
@@ -198,7 +240,7 @@ Mac OS平台，你可以直接使用我编译好的可执行程序:
 尽量提供了所有依赖资源，方便傻瓜式编译。
 
 ### PC端
-1. 目标平台上搭建Qt开发环境(Qt >= 5.9.7, vs >= 2015 (**不支持mingw**))
+1. 目标平台上搭建Qt开发环境(Qt == 5.15, vs == 2017 (**不支持mingw**))
 2. 克隆该项目
 3. 使用QtCreator打开项目根目录all.pro
 4. 编译，运行即可
@@ -213,7 +255,7 @@ Mac OS平台，你可以直接使用我编译好的可执行程序:
 ## Licence
 由于是复刻的scrcpy，尊重它的Licence
 
-    Copyright (C) 2018 Genymobile
+    Copyright (C) 2020 Barry
     
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.

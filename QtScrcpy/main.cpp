@@ -1,21 +1,24 @@
 #include <QApplication>
 #include <QDebug>
-#include <QTcpSocket>
-#include <QTcpServer>
-#include <QTranslator>
 #include <QFile>
 #include <QSurfaceFormat>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QTranslator>
 
-#include "dialog.h"
-#include "stream.h"
-#include "mousetap/mousetap.h"
 #include "config.h"
+#include "dialog.h"
+#include "mousetap/mousetap.h"
+#include "stream.h"
 
-static Dialog* g_mainDlg = Q_NULLPTR;
+static Dialog *g_mainDlg = Q_NULLPTR;
 
 static QtMessageHandler g_oldMessageHandler = Q_NULLPTR;
 void myMessageOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg);
 void installTranslator();
+
+static QtMsgType g_msgType = QtInfoMsg;
+QtMsgType covertLogLevel(const QString &logLevel);
 
 int main(int argc, char *argv[])
 {
@@ -38,11 +41,14 @@ int main(int argc, char *argv[])
     qputenv("QTSCRCPY_KEYMAP_PATH", "../../../keymap");
 #endif
 
+    g_msgType = covertLogLevel(Config::getInstance().getLogLevel());
+
     // set on QApplication before
+    // bug: config path is error on mac
     int opengl = Config::getInstance().getDesktopOpenGL();
     if (0 == opengl) {
         QApplication::setAttribute(Qt::AA_UseSoftwareOpenGL);
-    } else if (1 == opengl){
+    } else if (1 == opengl) {
         QApplication::setAttribute(Qt::AA_UseOpenGLES);
     } else if (2 == opengl) {
         QApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
@@ -98,8 +104,13 @@ int main(int argc, char *argv[])
     g_mainDlg->setWindowTitle(Config::getInstance().getTitle());
     g_mainDlg->show();
 
-    qInfo(QObject::tr("This software is completely open source and free, you can download it at the following address:").toUtf8());
-    qInfo(QString("QtScrcpy %1 <https://github.com/barry-ran/QtScrcpy>").arg(QCoreApplication::applicationVersion()).toUtf8());
+    qInfo(
+        "%s",
+        QObject::tr("This software is completely open source and free. Strictly used for illegal purposes, or at your own risk. You can download it at the "
+                    "following address:")
+            .toUtf8()
+            .data());
+    qInfo() << QString("QtScrcpy %1 <https://github.com/barry-ran/QtScrcpy>").arg(QCoreApplication::applicationVersion()).toUtf8();
 
     int ret = a.exec();
 
@@ -111,7 +122,8 @@ int main(int argc, char *argv[])
     return ret;
 }
 
-void installTranslator() {
+void installTranslator()
+{
     static QTranslator translator;
     QLocale locale;
     QLocale::Language language = locale.language();
@@ -130,17 +142,53 @@ void installTranslator() {
     qApp->installTranslator(&translator);
 }
 
+QtMsgType covertLogLevel(const QString &logLevel)
+{
+    if ("debug" == logLevel) {
+        return QtDebugMsg;
+    }
+
+    if ("info" == logLevel) {
+        return QtInfoMsg;
+    }
+
+    if ("warn" == logLevel) {
+        return QtWarningMsg;
+    }
+
+    if ("error" == logLevel) {
+        return QtCriticalMsg;
+    }
+
+#ifdef QT_NO_DEBUG
+    return QtInfoMsg;
+#else
+    return QtDebugMsg;
+#endif
+}
+
 void myMessageOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
     if (g_oldMessageHandler) {
         g_oldMessageHandler(type, context, msg);
     }
 
-    if (QtDebugMsg < type) {
+    // qt log info big than warning?
+    float fLogLevel = 1.0f * g_msgType;
+    if (QtInfoMsg == g_msgType) {
+        fLogLevel = QtDebugMsg + 0.5f;
+    }
+    float fLogLevel2 = 1.0f * type;
+    if (QtInfoMsg == type) {
+        fLogLevel2 = QtDebugMsg + 0.5f;
+    }
+
+    if (fLogLevel <= fLogLevel2) {
         if (g_mainDlg && g_mainDlg->isVisible() && !g_mainDlg->filterLog(msg)) {
             g_mainDlg->outLog(msg);
         }
     }
+
     if (QtFatalMsg == type) {
         //abort();
     }

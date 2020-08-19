@@ -1,6 +1,6 @@
-#include <QSettings>
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QSettings>
 
 #include "config.h"
 
@@ -14,7 +14,7 @@
 #define COMMON_PUSHFILE_DEF "/sdcard/"
 
 #define COMMON_SERVER_VERSION_KEY "ServerVersion"
-#define COMMON_SERVER_VERSION_DEF "1.12.1"
+#define COMMON_SERVER_VERSION_DEF "1.14"
 
 #define COMMON_SERVER_PATH_KEY "ServerPath"
 #define COMMON_SERVER_PATH_DEF "/data/local/tmp/scrcpy-server.jar"
@@ -31,6 +31,15 @@
 #define COMMON_RENDER_EXPIRED_FRAMES_KEY "RenderExpiredFrames"
 #define COMMON_RENDER_EXPIRED_FRAMES_DEF 0
 
+#define COMMON_ADB_PATH_KEY "AdbPath"
+#define COMMON_ADB_PATH_DEF ""
+
+#define COMMON_LOG_LEVEL_KEY "LogLevel"
+#define COMMON_LOG_LEVEL_DEF "info"
+
+#define COMMON_CODEC_OPTIONS_KEY "CodecOptions"
+#define COMMON_CODEC_OPTIONS_DEF "-"
+
 // user data
 #define COMMON_RECORD_KEY "RecordPath"
 #define COMMON_RECORD_DEF ""
@@ -43,6 +52,15 @@
 
 #define COMMON_RECORD_FORMAT_INDEX_KEY "RecordFormatIndex"
 #define COMMON_RECORD_FORMAT_INDEX_DEF 0
+
+#define SERIAL_WINDOW_RECT_KEY_X "WindowRectX"
+#define SERIAL_WINDOW_RECT_KEY_Y "WindowRectY"
+#define SERIAL_WINDOW_RECT_KEY_W "WindowRectW"
+#define SERIAL_WINDOW_RECT_KEY_H "WindowRectH"
+#define SERIAL_WINDOW_RECT_KEY_DEF -1
+
+#define COMMON_FRAMELESS_WINDOW_KEY "FramelessWindow"
+#define COMMON_FRAMELESS_WINDOW_DEF false
 
 // 最大尺寸 录制格式
 
@@ -63,7 +81,7 @@ Config &Config::getInstance()
     return config;
 }
 
-const QString& Config::getConfigPath()
+const QString &Config::getConfigPath()
 {
     if (s_configPath.isEmpty()) {
         s_configPath = QString::fromLocal8Bit(qgetenv("QTSCRCPY_CONFIG_PATH"));
@@ -140,6 +158,45 @@ void Config::setRecordFormatIndex(int recordFormatIndex)
     m_userData->endGroup();
 }
 
+void Config::setRect(const QString &serial, const QRect &rc)
+{
+    m_userData->beginGroup(serial);
+    m_userData->setValue(SERIAL_WINDOW_RECT_KEY_X, rc.left());
+    m_userData->setValue(SERIAL_WINDOW_RECT_KEY_Y, rc.top());
+    m_userData->setValue(SERIAL_WINDOW_RECT_KEY_W, rc.width());
+    m_userData->setValue(SERIAL_WINDOW_RECT_KEY_H, rc.height());
+    m_userData->endGroup();
+    m_userData->sync();
+}
+
+QRect Config::getRect(const QString &serial)
+{
+    QRect rc;
+    m_userData->beginGroup(serial);
+    rc.setX(m_userData->value(SERIAL_WINDOW_RECT_KEY_X, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
+    rc.setY(m_userData->value(SERIAL_WINDOW_RECT_KEY_Y, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
+    rc.setWidth(m_userData->value(SERIAL_WINDOW_RECT_KEY_W, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
+    rc.setHeight(m_userData->value(SERIAL_WINDOW_RECT_KEY_H, SERIAL_WINDOW_RECT_KEY_DEF).toInt());
+    m_userData->endGroup();
+    return rc;
+}
+
+void Config::setFramelessWindow(bool frameless)
+{
+    m_userData->beginGroup(GROUP_COMMON);
+    m_userData->setValue(COMMON_FRAMELESS_WINDOW_KEY, frameless);
+    m_userData->endGroup();
+}
+
+bool Config::getFramelessWindow()
+{
+    bool framelessWindow = false;
+    m_userData->beginGroup(GROUP_COMMON);
+    framelessWindow = m_userData->value(COMMON_FRAMELESS_WINDOW_KEY, COMMON_FRAMELESS_WINDOW_DEF).toBool();
+    m_userData->endGroup();
+    return framelessWindow;
+}
+
 QString Config::getServerVersion()
 {
     QString server;
@@ -205,6 +262,33 @@ QString Config::getServerPath()
     return serverPath;
 }
 
+QString Config::getAdbPath()
+{
+    QString adbPath;
+    m_settings->beginGroup(GROUP_COMMON);
+    adbPath = m_settings->value(COMMON_ADB_PATH_KEY, COMMON_ADB_PATH_DEF).toString();
+    m_settings->endGroup();
+    return adbPath;
+}
+
+QString Config::getLogLevel()
+{
+    QString logLevel;
+    m_settings->beginGroup(GROUP_COMMON);
+    logLevel = m_settings->value(COMMON_LOG_LEVEL_KEY, COMMON_LOG_LEVEL_DEF).toString();
+    m_settings->endGroup();
+    return logLevel;
+}
+
+QString Config::getCodecOptions()
+{
+    QString codecOptions;
+    m_settings->beginGroup(GROUP_COMMON);
+    codecOptions = m_settings->value(COMMON_CODEC_OPTIONS_KEY, COMMON_CODEC_OPTIONS_DEF).toString();
+    m_settings->endGroup();
+    return codecOptions;
+}
+
 QString Config::getTitle()
 {
     QString title;
@@ -213,6 +297,3 @@ QString Config::getTitle()
     m_settings->endGroup();
     return title;
 }
-
-
-
